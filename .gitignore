@@ -1,0 +1,53 @@
+# Build directories
+bin/
+obj/
+build/
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.pdb
+
+# Test database files
+*.db
+
+# Core dumps (only files, not directories)
+/core
+core.*
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Assignment PDF (keep private)
+*.pdf
+
+# Claude-specific
+.claude/
