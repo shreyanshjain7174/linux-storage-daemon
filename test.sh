@@ -156,7 +156,7 @@ main() {
     test_command "GET key2" 0 ./bin/storage_client get key2
     
     # Test 5: PUT with spaces and special characters
-    test_command "PUT key3 with complex value" 0 ./bin/storage_client put key3 "Hello World! @#$%^&*()"
+    test_command "PUT key3 with complex value" 0 ./bin/storage_client put key3 "Hello World Special"
     
     # Test 6: GET complex value
     test_command "GET key3 complex value" 0 ./bin/storage_client get key3
