@@ -246,7 +246,7 @@ int daemon_start(const char* storage_file) {
     return 0;
 }
 
-// Process a single message from client (stub for now)
+// Process a single message from client
 static int process_message(int client_fd) {
     struct message_header header;
     
@@ -260,22 +260,237 @@ static int process_message(int client_fd) {
     syslog(LOG_DEBUG, "Received message type %d, payload size %d", 
            header.type, header.payload_size);
     
-    // TODO: Implement message processing in the next step
-    // For now, just send back an error
-    struct message_header response_header = {
-        .type = MSG_ERROR,
-        .payload_size = sizeof(struct error_response),
-        .sequence_id = header.sequence_id,
-        .reserved = 0
-    };
+    // Validate payload size
+    if (header.payload_size > MAX_MESSAGE_SIZE) {
+        syslog(LOG_WARNING, "Payload size too large: %u", header.payload_size);
+        return -1;
+    }
     
-    struct error_response error_resp = {
-        .error_code = -1
-    };
-    strncpy(error_resp.error_message, "Not implemented yet", sizeof(error_resp.error_message) - 1);
+    // Allocate buffer for payload
+    char* payload = NULL;
+    if (header.payload_size > 0) {
+        payload = malloc(header.payload_size);
+        if (!payload) {
+            syslog(LOG_ERR, "Failed to allocate payload buffer");
+            return -1;
+        }
+        
+        // Read payload
+        bytes_read = read(client_fd, payload, header.payload_size);
+        if (bytes_read != header.payload_size) {
+            syslog(LOG_WARNING, "Failed to read payload");
+            free(payload);
+            return -1;
+        }
+    }
     
-    write(client_fd, &response_header, sizeof(response_header));
-    write(client_fd, &error_resp, sizeof(error_resp));
+    // Process based on message type
+    switch (header.type) {
+        case MSG_PUT_REQUEST: {
+            struct put_request* req = (struct put_request*)payload;
+            
+            // Validate request
+            if (header.payload_size < sizeof(struct put_request)) {
+                syslog(LOG_WARNING, "Invalid PUT request size");
+                free(payload);
+                return -1;
+            }
+            
+            // Extract value data (follows the put_request struct)
+            char* value = payload + sizeof(struct put_request);
+            size_t expected_size = sizeof(struct put_request) + req->value_size;
+            
+            if (header.payload_size != expected_size) {
+                syslog(LOG_WARNING, "PUT request size mismatch");
+                free(payload);
+                return -1;
+            }
+            
+            // Call storage function with mutex protection
+            pthread_mutex_lock(&storage_mutex);
+            int result = storage_put(req->key, value, req->value_size);
+            pthread_mutex_unlock(&storage_mutex);
+            
+            syslog(LOG_INFO, "PUT key='%s' value_size=%u result=%d", 
+                   req->key, req->value_size, result);
+            
+            // Send response
+            struct message_header resp_header = {
+                .type = MSG_PUT_RESPONSE,
+                .payload_size = sizeof(struct put_response),
+                .sequence_id = header.sequence_id,
+                .reserved = 0
+            };
+            
+            struct put_response resp = {
+                .result = result
+            };
+            
+            write(client_fd, &resp_header, sizeof(resp_header));
+            write(client_fd, &resp, sizeof(resp));
+            break;
+        }
+        
+        case MSG_GET_REQUEST: {
+            struct get_request* req = (struct get_request*)payload;
+            
+            // Validate request
+            if (header.payload_size != sizeof(struct get_request)) {
+                syslog(LOG_WARNING, "Invalid GET request size");
+                free(payload);
+                return -1;
+            }
+            
+            // First, get the value size
+            size_t value_size = 0;
+            pthread_mutex_lock(&storage_mutex);
+            int result = storage_get(req->key, NULL, &value_size);
+            
+            if (result == 0) {
+                // Allocate buffer for value
+                char* value_buffer = malloc(value_size);
+                if (value_buffer) {
+                    // Get the actual value
+                    result = storage_get(req->key, value_buffer, &value_size);
+                    pthread_mutex_unlock(&storage_mutex);
+                    
+                    if (result == 0) {
+                        syslog(LOG_INFO, "GET key='%s' value_size=%zu result=%d", 
+                               req->key, value_size, result);
+                        
+                        // Send success response with value
+                        struct message_header resp_header = {
+                            .type = MSG_GET_RESPONSE,
+                            .payload_size = sizeof(struct get_response) + value_size,
+                            .sequence_id = header.sequence_id,
+                            .reserved = 0
+                        };
+                        
+                        struct get_response resp = {
+                            .result = 0,
+                            .value_size = value_size
+                        };
+                        
+                        // Send response header and response struct
+                        write(client_fd, &resp_header, sizeof(resp_header));
+                        write(client_fd, &resp, sizeof(resp));
+                        
+                        // Send value data
+                        if (value_size > 0) {
+                            write(client_fd, value_buffer, value_size);
+                        }
+                    } else {
+                        // Error reading value
+                        syslog(LOG_WARNING, "GET key='%s' failed to read value: %d", 
+                               req->key, result);
+                        
+                        struct message_header resp_header = {
+                            .type = MSG_GET_RESPONSE,
+                            .payload_size = sizeof(struct get_response),
+                            .sequence_id = header.sequence_id,
+                            .reserved = 0
+                        };
+                        
+                        struct get_response resp = {
+                            .result = result,
+                            .value_size = 0
+                        };
+                        
+                        write(client_fd, &resp_header, sizeof(resp_header));
+                        write(client_fd, &resp, sizeof(resp));
+                    }
+                    
+                    free(value_buffer);
+                } else {
+                    pthread_mutex_unlock(&storage_mutex);
+                    syslog(LOG_ERR, "Failed to allocate value buffer for GET");
+                    result = -1;
+                }
+            } else {
+                pthread_mutex_unlock(&storage_mutex);
+                syslog(LOG_INFO, "GET key='%s' not found: %d", req->key, result);
+            }
+            
+            // If we get here, it's an error case
+            if (result != 0) {
+                struct message_header resp_header = {
+                    .type = MSG_GET_RESPONSE,
+                    .payload_size = sizeof(struct get_response),
+                    .sequence_id = header.sequence_id,
+                    .reserved = 0
+                };
+                
+                struct get_response resp = {
+                    .result = result,
+                    .value_size = 0
+                };
+                
+                write(client_fd, &resp_header, sizeof(resp_header));
+                write(client_fd, &resp, sizeof(resp));
+            }
+            break;
+        }
+        
+        case MSG_DELETE_REQUEST: {
+            struct delete_request* req = (struct delete_request*)payload;
+            
+            // Validate request
+            if (header.payload_size != sizeof(struct delete_request)) {
+                syslog(LOG_WARNING, "Invalid DELETE request size");
+                free(payload);
+                return -1;
+            }
+            
+            // Call storage function with mutex protection
+            pthread_mutex_lock(&storage_mutex);
+            int result = storage_delete(req->key);
+            pthread_mutex_unlock(&storage_mutex);
+            
+            syslog(LOG_INFO, "DELETE key='%s' result=%d", req->key, result);
+            
+            // Send response
+            struct message_header resp_header = {
+                .type = MSG_DELETE_RESPONSE,
+                .payload_size = sizeof(struct delete_response),
+                .sequence_id = header.sequence_id,
+                .reserved = 0
+            };
+            
+            struct delete_response resp = {
+                .result = result
+            };
+            
+            write(client_fd, &resp_header, sizeof(resp_header));
+            write(client_fd, &resp, sizeof(resp));
+            break;
+        }
+        
+        default: {
+            syslog(LOG_WARNING, "Unknown message type: %u", header.type);
+            
+            struct message_header resp_header = {
+                .type = MSG_ERROR,
+                .payload_size = sizeof(struct error_response),
+                .sequence_id = header.sequence_id,
+                .reserved = 0
+            };
+            
+            struct error_response error_resp = {
+                .error_code = -1
+            };
+            snprintf(error_resp.error_message, sizeof(error_resp.error_message),
+                    "Unknown message type: %u", header.type);
+            
+            write(client_fd, &resp_header, sizeof(resp_header));
+            write(client_fd, &error_resp, sizeof(error_resp));
+            break;
+        }
+    }
+    
+    // Clean up
+    if (payload) {
+        free(payload);
+    }
     
     return 0;
 }
