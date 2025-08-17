@@ -7,7 +7,7 @@ A simple key-value store that runs as a Linux daemon. Clients connect via Unix s
 
 **Process model**: Main daemon just accepts connections and forks a child for each client. Child handles the request and exits. Simple but effective.
 
-**Storage**: Everything goes into a 64MB file split into 4KB blocks. Block 0 holds metadata (magic number, key index, bitmap). Remaining blocks store actual data in linked lists.
+**Storage**: Everything goes into a 64MB file split into 4KB blocks. Block 0 holds metadata (magic number, key index, bitmap for allocation tracking). Remaining blocks store actual data, chained together as linked lists for large values.
 
 **Communication**: Binary protocol over Unix domain socket. Client sends message header + request struct + data. Server responds similarly.
 
@@ -67,6 +67,19 @@ The hardest part was getting the struct packing right - compiler padding was add
 Process forking turned out cleaner than I expected. Each client connection is completely isolated, and zombie cleanup with SIGCHLD just works.
 
 The bitmap for block allocation is straightforward - just set/clear bits. Linked list for large values means no need for complex allocation algorithms.
+
+**Example - storing a 10KB value**:
+```
+1. Bitmap finds free blocks: 5, 12, 8
+2. Chain them: Block 5 → Block 12 → Block 8 → 0 (end)
+3. Store data across blocks:
+   Block 5:  [next: 12] [size: 4088] [first 4088 bytes]
+   Block 12: [next: 8]  [size: 4088] [middle 4088 bytes] 
+   Block 8:  [next: 0]  [size: 1824] [last 1824 bytes]
+4. Mark bits 5, 12, 8 as USED in bitmap
+```
+
+Two different systems working together: bitmap tracks allocation, linked lists organize data.
 
 ## Test results
 
