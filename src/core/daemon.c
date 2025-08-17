@@ -23,7 +23,6 @@ static int create_daemon_process(void);
 static int setup_unix_socket(void);
 static void handle_signal(int sig);
 static void cleanup_daemon(void);
-static void* handle_client(void* arg);
 static int process_message(int client_fd);
 
 // Signal handler for graceful shutdown

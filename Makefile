@@ -17,15 +17,7 @@ OBJDIR = obj
 $(shell mkdir -p $(BINDIR) $(OBJDIR) $(OBJDIR)/core $(OBJDIR)/server $(OBJDIR)/client)
 
 # Targets
-all: $(BINDIR)/test_storage $(BINDIR)/test_storage_cpp $(BINDIR)/storage_daemon $(BINDIR)/storage_client
-
-# Original C test program
-$(BINDIR)/test_storage: test_storage.c $(OBJDIR)/core/storage.o
-	$(CC) $(CFLAGS) -o $@ test_storage.c $(OBJDIR)/core/storage.o $(LDFLAGS)
-
-# C++ test program
-$(BINDIR)/test_storage_cpp: test_storage_cpp.cpp $(OBJDIR)/core/storage.o $(OBJDIR)/server/StorageEngine.o
-	$(CXX) $(CXXFLAGS) -o $@ test_storage_cpp.cpp $(OBJDIR)/core/storage.o $(OBJDIR)/server/StorageEngine.o $(LDFLAGS)
+all: $(BINDIR)/storage_daemon $(BINDIR)/storage_client
 
 # Storage daemon
 $(BINDIR)/storage_daemon: $(OBJDIR)/core/main.o $(OBJDIR)/core/daemon.o $(OBJDIR)/core/storage.o
@@ -57,17 +49,19 @@ $(OBJDIR)/client/cli.o: $(CLIENTDIR)/cli.c $(INCDIR)/client/storage_client.h
 	$(CC) $(CFLAGS) -c -o $@ $(CLIENTDIR)/cli.c
 
 # Run tests
-test: $(BINDIR)/test_storage
-	./$(BINDIR)/test_storage
+test: all
+	./tests/test.sh
 
-test-cpp: $(BINDIR)/test_storage_cpp
-	./$(BINDIR)/test_storage_cpp
+test-stress: all
+	./tests/stress_test.sh
 
-test-all: test test-cpp
+test-performance: all
+	./tests/performance_test.sh
+
+test-all: test test-stress test-performance
 
 # Clean
 clean:
 	rm -rf $(BINDIR) $(OBJDIR)
-	rm -f test_storage.db test_storage_cpp.db
 
-.PHONY: all test test-cpp test-all clean
+.PHONY: all test test-stress test-performance test-all clean

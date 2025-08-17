@@ -176,7 +176,7 @@ int storage_put(const char* key, const char* value, size_t value_size) {
     
     // Calculate blocks needed based on data area size, not full struct size
     int blocks_needed = (value_size + sizeof(((struct data_block*)0)->data) - 1) / sizeof(((struct data_block*)0)->data);
-    if (blocks_needed > meta.free_blocks) {
+    if ((uint32_t)blocks_needed > meta.free_blocks) {
         return -1;  // Not enough space
     }
     

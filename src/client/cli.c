@@ -46,9 +46,9 @@ int main(int argc, char* argv[]) {
         result = client_put_string(fd, key, value);
         
         if (result == 0) {
-            printf("✓ PUT successful\n");
+            printf("PUT successful\n");
         } else {
-            printf("✗ PUT failed (error %d)\n", result);
+            printf("PUT failed (error %d)\n", result);
         }
         
     } else if (strcmp(command, "get") == 0) {
@@ -65,12 +65,12 @@ int main(int argc, char* argv[]) {
         result = client_get_string(fd, key, value, sizeof(value));
         
         if (result == 0) {
-            printf("✓ GET successful\n");
+            printf("GET successful\n");
             printf("Value: %s\n", value);
         } else if (result == -1) {
-            printf("✗ Key not found\n");
+            printf("Key not found\n");
         } else {
-            printf("✗ GET failed (error %d)\n", result);
+            printf("GET failed (error %d)\n", result);
         }
         
     } else if (strcmp(command, "delete") == 0) {
@@ -86,11 +86,11 @@ int main(int argc, char* argv[]) {
         result = client_delete(fd, key);
         
         if (result == 0) {
-            printf("✓ DELETE successful\n");
+            printf("DELETE successful\n");
         } else if (result == -1) {
-            printf("✗ Key not found\n");
+            printf("Key not found\n");
         } else {
-            printf("✗ DELETE failed (error %d)\n", result);
+            printf("DELETE failed (error %d)\n", result);
         }
         
     } else {
